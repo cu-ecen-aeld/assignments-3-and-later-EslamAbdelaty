@@ -66,17 +66,15 @@ cd "$OUTDIR"
 if [ -d "${OUTDIR}/rootfs" ]
 then
 	echo "Deleting rootfs directory at ${OUTDIR}/rootfs and starting over"
-    sudo rm  -rf ${OUTDIR}/rootfs
+    rm  -rf ${OUTDIR}/rootfs
 fi
 
 # TODO: Create necessary base directories
-sudo mkdir -p ${OUTDIR}/rootfs
+mkdir -p ${OUTDIR}/rootfs
 cd ${OUTDIR}/rootfs
-sudo mkdir -p bin dev etc home lib lib64 proc sbin sys tmp var usr 
-sudo mkdir -p usr/bin usr/lib usr/sbin
-sudo mkdir -p var/log
-# Ensure the directories are writable
-sudo chmod -R u+w ${OUTDIR}/rootfs
+mkdir -p bin dev etc home lib lib64 proc sbin sys tmp var usr 
+mkdir -p usr/bin usr/lib usr/sbin
+mkdir -p var/log
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -92,6 +90,7 @@ git clone git://busybox.net/busybox.git
     cd busybox
 fi
 
+echo "Make and install busybox"
 # TODO: Make and install busybox
 # Make and install busybox
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
@@ -160,17 +159,19 @@ cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
-cp -rl ${FINDER_APP_DIR}/conf  ${OUTDIR}/rootfs/home
+# Ensure the conf directory exists in the rootfs
+mkdir -p ${OUTDIR}/rootfs/home/conf
+# Copy the conf directory without hard links
+cp -r ${FINDER_APP_DIR}/conf/* ${OUTDIR}/rootfs/home/conf/
 # cp -rl ${FINDER_APP_DIR}/conf/assignment.txt  ${OUTDIR}/rootfs/home
 # TODO: Chown the root directory
 
+echo " Chown the root directory"
+sudo chown -R root:root ${OUTDIR}/*
 cd ${OUTDIR}/rootfs
-
-sudo chown -R root:root *
-
 
 # TODO: Create initramfs.cpio.gz
 echo "Creating initramfs.cpio.gz"
 find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
-
+cd ${OUTDIR}
 gzip ${OUTDIR}/initramfs.cpio

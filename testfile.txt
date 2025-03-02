@@ -1,1 +1,1 @@
-home is /root
+home is /home/eslama
