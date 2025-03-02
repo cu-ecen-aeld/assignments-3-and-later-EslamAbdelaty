@@ -12,8 +12,10 @@ BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
-CROSS_COMPILE_PATH=/home/eslama/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/
-
+# CROSS_COMPILE_PATH=/home/eslama/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc
+CROSS_COMPILE_BIN=$(which aarch64-none-linux-gnu-gcc)
+CROSS_COMPILE_PATH=$(dirname $(dirname $(dirname $CROSS_COMPILE_BIN)))/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc
+echo "CROSS_COMPILE_PATH: $CROSS_COMPILE_PATH"
 # Add cross-compiler to PATH
 export PATH=/home/eslama/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin:$PATH
 
@@ -66,17 +68,15 @@ cd "$OUTDIR"
 if [ -d "${OUTDIR}/rootfs" ]
 then
 	echo "Deleting rootfs directory at ${OUTDIR}/rootfs and starting over"
-    sudo rm  -rf ${OUTDIR}/rootfs
+    rm  -rf ${OUTDIR}/rootfs
 fi
 
 # TODO: Create necessary base directories
-sudo mkdir -p ${OUTDIR}/rootfs
+mkdir -p ${OUTDIR}/rootfs
 cd ${OUTDIR}/rootfs
-sudo mkdir -p bin dev etc home lib lib64 proc sbin sys tmp var usr 
-sudo mkdir -p usr/bin usr/lib usr/sbin
-sudo mkdir -p var/log
-# Ensure the directories are writable
-sudo chmod -R u+w ${OUTDIR}/rootfs
+mkdir -p bin dev etc home lib lib64 proc sbin sys tmp var usr 
+mkdir -p usr/bin usr/lib usr/sbin
+mkdir -p var/log
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -92,6 +92,7 @@ git clone git://busybox.net/busybox.git
     cd busybox
 fi
 
+echo "Make and install busybox"
 # TODO: Make and install busybox
 # Make and install busybox
 make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
@@ -123,6 +124,7 @@ echo "Shared libraries: ${SHARED_LIBS}"
 # Copy the program interpreter to the root filesystem
 if [ -n "${PROGRAM_INTERPRETER}" ]; then
     echo "Copying program interpreter: ${PROGRAM_INTERPRETER}"
+    echo "${PROGRAM_INTERPRETER}"
     mkdir -p ${OUTDIR}/rootfs$(dirname ${PROGRAM_INTERPRETER})
     cp ${CROSS_COMPILE_PATH}${PROGRAM_INTERPRETER} ${OUTDIR}/rootfs${PROGRAM_INTERPRETER}
 else
@@ -145,7 +147,6 @@ sudo mknod -m 666 ${OUTDIR}/rootfs/dev/null c 1 3
 sudo mknod -m 600 ${OUTDIR}/rootfs/dev/console c 5 1
 sudo mknod -m 666 ${OUTDIR}/rootfs/dev/tty c 5 0
 sudo mknod -m 666 ${OUTDIR}/rootfs/dev/random c 1 8
-
 # TODO: Clean and build the writer utility
 
 cd $FINDER_APP_DIR
@@ -160,17 +161,19 @@ cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
 cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
-cp -rl ${FINDER_APP_DIR}/conf  ${OUTDIR}/rootfs/home
+# Ensure the conf directory exists in the rootfs
+mkdir -p ${OUTDIR}/rootfs/home/conf
+# Copy the conf directory without hard links
+cp -r ${FINDER_APP_DIR}/conf/* ${OUTDIR}/rootfs/home/conf/
 # cp -rl ${FINDER_APP_DIR}/conf/assignment.txt  ${OUTDIR}/rootfs/home
 # TODO: Chown the root directory
 
+echo " Chown the root directory"
+sudo chown -R root:root ${OUTDIR}/*
 cd ${OUTDIR}/rootfs
-
-sudo chown -R root:root *
-
 
 # TODO: Create initramfs.cpio.gz
 echo "Creating initramfs.cpio.gz"
 find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
-
+cd ${OUTDIR}
 gzip ${OUTDIR}/initramfs.cpio
