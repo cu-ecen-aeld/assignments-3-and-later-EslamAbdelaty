@@ -11,17 +11,44 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <pthread.h>
-#include "aesdsocket.h"
 #include <signal.h>
 #include <syslog.h>
+#include "queue.h"
+#include <time.h>
+#include "aesdsocket.h"
 
 
 volatile sig_atomic_t keepRunning = 1;
+static pthread_mutex_t filewrite = PTHREAD_MUTEX_INITIALIZER;
 
 void sig_handler(int sig){
     keepRunning = 0;
 }
 
+void appendTime()
+{
+    time_t now;
+    int tfd = open("/var/tmp/aesdsocketdata.txt" , O_CREAT | O_RDWR  , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    time_t started = time(NULL);
+    
+    while (keepRunning){
+        now = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now, &tm_now);
+        char buf[128];
+        strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S%z", &tm_now);
+        pthread_mutex_lock(&filewrite);
+        lseek(tfd, 0, SEEK_END);
+        write(tfd, "timestamp:", strlen("timestamp:"));
+        write(tfd, buf, strlen(buf));
+        write(tfd, "\n", 1);
+        lseek(tfd, 0, SEEK_SET);
+        pthread_mutex_unlock(&filewrite);
+        sleep(10);
+    }
+    close(tfd);
+
+}
 int main( int argc, char *argv[] ) {
 
     struct sockaddr_in clientAddr;
@@ -31,6 +58,8 @@ int main( int argc, char *argv[] ) {
     struct sigaction sa;
     int option;
     int daemonize = 0;
+
+
 
     while ((option = getopt(argc, argv, "d")) != -1) 
     {
@@ -101,6 +130,19 @@ int main( int argc, char *argv[] ) {
 
     int clientFD;
     struct clientInfo* clientInfo;
+
+    head_t threads_queue;
+    TAILQ_INIT(&threads_queue);
+    uint8_t thread_count = 0;
+        
+
+    pthread_t timer_thread;
+
+    if(pthread_create(&timer_thread , NULL , (void*)appendTime , NULL ) < 0){
+        syslog(LOG_ERR , "Error creating thread");
+        return -1;
+    }
+
     while (keepRunning) 
     {
         
@@ -129,9 +171,25 @@ int main( int argc, char *argv[] ) {
             free( clientPtr);
             return -1;
         }
+        thread_count++;
+        struct thread_node * clinthreadnode = malloc(sizeof(struct thread_node));
+        clinthreadnode->tid = clinthread;
+        clinthreadnode->id = thread_count;
+        TAILQ_INSERT_TAIL(&threads_queue, clinthreadnode, next);
         
-        pthread_detach(clinthread);
         printf("Handler assigned to thread. Waiting for next connection.\\n");
+
+       
+        printf("Handler assigned to thread. Waiting for next connection.\\n");
+    }
+
+    struct thread_node *cur , *nextt;
+    TAILQ_FOREACH_SAFE(cur, &threads_queue, next,nextt)
+    {
+        pthread_join(cur->tid , NULL);
+        TAILQ_REMOVE(&threads_queue , cur , next);
+        free(cur);
+        cur = NULL;
     }
 
     close(sockFD);
@@ -165,6 +223,7 @@ int server_init(){
     
     return sockFD;
 }
+
 
 void processClientData( struct clientInfo* clientInfo )
 {
@@ -206,6 +265,9 @@ void processClientData( struct clientInfo* clientInfo )
                 memcpy(packet_buffer, ptr, (packet_size + 1) );
                 // WRITE THE PACKET BUFFER TO THE FILE
                 printf("Received %d bytes: %s\n", packet_size+1, packet_buffer);
+
+                pthread_mutex_lock(&filewrite);
+
                 //Seek to the end of the file
                 lseek(fd, 0, SEEK_END);
                 bytes_written +=  write(fd, packet_buffer, (packet_size+ 1));
@@ -221,6 +283,8 @@ void processClientData( struct clientInfo* clientInfo )
                 // send the full content of  /var/tmp/aesdsocketdata
                 char *buffer_rFile = malloc(MAX_PACKET_SIZE);
                 int bytes_read = read(fd, buffer_rFile, MAX_PACKET_SIZE);
+
+                pthread_mutex_unlock(&filewrite);
                 if (bytes_read < 0) {
                     syslog(LOG_ERR , "Error reading file");
                     printf("Error reading file\n");
@@ -232,12 +296,14 @@ void processClientData( struct clientInfo* clientInfo )
                 // COPY THE REMAINING DATA TO THE PACKET BUFFER
                 int packet_size = bytes - bytes_written;
                 memcpy(packet_buffer, ptr, packet_size );
+                pthread_mutex_lock(&filewrite);
                 lseek(fd, 0, SEEK_END);
                 // WRITE THE PACKET BUFFER TO THE FILE
                 bytes_written += write(fd, packet_buffer, packet_size  );
                 // bytes_written += packet_size ;
                 // MOVE THE BUFFER POINTER TO THE END OF THE DATA
                 ptr += packet_size;
+                pthread_mutex_unlock(&filewrite);
             }
         }
 
