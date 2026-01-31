@@ -29,7 +29,6 @@ void appendTime()
 {
     time_t now;
     int tfd = open("/var/tmp/aesdsocketdata.txt" , O_CREAT | O_RDWR  , S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-    time_t started = time(NULL);
     
     while (keepRunning){
         now = time(NULL);
@@ -53,7 +52,6 @@ int main( int argc, char *argv[] ) {
 
     struct sockaddr_in clientAddr;
     socklen_t clientAddr_len = sizeof(clientAddr);
-    char buffer[1024];
 
     struct sigaction sa;
     int option;
